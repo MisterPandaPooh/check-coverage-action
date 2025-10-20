@@ -8,12 +8,19 @@ import { execSync } from "child_process";
  */
 export function extractTotalCoverageWithTool(coverageFile) {
   try {
+    core.info(`extractTotalCoverageWithTool ${coverageFile}`);
     // For LCOV files, use lcov --summary
     if (coverageFile.endsWith(".info")) {
-      const output = execSync(`lcov --summary ${coverageFile}`, {
+      const output = execSync(`lcov --summary ${coverageFile} 2>&1`, {
         encoding: "utf8",
-        stderr: "pipe",
       });
+
+      // Log each line separately for better visibility
+      core.info("=== LCOV Summary Output ===");
+      const lines = output.split("\n").filter((line) => line.trim());
+      lines.forEach((line) => core.info(line));
+      core.info("=== End LCOV Summary ===");
+
       // Output format: "lines......: 85.5% (171 of 200 lines)"
       const match = output.match(/lines[.\s]+:\s+([0-9.]+)%/);
       if (match) {
@@ -23,6 +30,12 @@ export function extractTotalCoverageWithTool(coverageFile) {
     } else {
       // For XML formats (Cobertura, JaCoCo), use coverage-report from diff-cover package
       const output = execSync(`coverage-report ${coverageFile}`, { encoding: "utf8" });
+
+      core.info("=== Coverage Report Output ===");
+      const lines = output.split("\n").filter((line) => line.trim());
+      lines.forEach((line) => core.info(line));
+      core.info("=== End Coverage Report ===");
+
       // Output format: "Total coverage: 87.50%"
       const match = output.match(/Total[:\s]+([0-9.]+)%/);
       if (match) {
@@ -50,12 +63,18 @@ export function extractTotalCoverageWithTool(coverageFile) {
 export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) {
   core.info(`📦 Running diff-cover on ${coverageFile} vs ${baseBranch}`);
 
+  // Normalize baseBranch to ensure it has the origin/ prefix for diff-cover
+  const compareBranch = baseBranch.startsWith("origin/") ? baseBranch : `origin/${baseBranch}`;
+  const branchName = baseBranch.replace("origin/", "");
+
   // Fetch the base branch - fail if this doesn't work
   try {
-    execSync(`git fetch origin ${baseBranch} --depth=1`, { stdio: "inherit" });
+    execSync(`git fetch origin ${branchName}:refs/remotes/origin/${branchName} --depth=1`, {
+      stdio: "inherit",
+    });
   } catch (error) {
     throw new Error(
-      `Failed to fetch branch ${baseBranch}: ${error.message}. Make sure the branch exists and is accessible.`
+      `Failed to fetch branch ${branchName}: ${error.message}. Make sure the branch exists and is accessible.`
     );
   }
 
@@ -65,7 +84,8 @@ export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) 
 
   try {
     // Run diff-cover (Python CLI) without fail-under to handle failure ourselves
-    diffOutput = execSync(`diff-cover ${coverageFile} --compare-branch=${baseBranch}`, {
+    // Use the origin/ prefixed branch name for diff-cover
+    diffOutput = execSync(`diff-cover ${coverageFile} --compare-branch=${compareBranch}`, {
       encoding: "utf8",
     });
   } catch (error) {

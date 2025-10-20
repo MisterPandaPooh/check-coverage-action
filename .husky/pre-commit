@@ -1,0 +1,6 @@
+npm run format
+npm run build
+npm test
+
+# Stage any changes made by format and build
+git add -A
