@@ -1,0 +1,38 @@
+{
+  "name": "check-coverage-action",
+  "version": "1.0.0",
+  "description": "GitHub Action to check code coverage using diff-cover",
+  "type": "module",
+  "author": "MisterPandaPooh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MisterPandaPooh/check-coverage-action"
+  },
+  "keywords": [
+    "github-action",
+    "coverage",
+    "diff-cover",
+    "lcov",
+    "testing",
+    "code-quality"
+  ],
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.js --packages=external",
+    "build:watch": "npm run build -- --watch",
+    "test": "node --test",
+    "test:coverage": "mkdir -p coverage && node --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info",
+    "test:watch": "node --test --watch",
+    "check-dist": "npm run build && git diff --exit-code dist/ || (echo '❌ dist/ is not up to date. Run npm run build and commit the changes.' && exit 1)",
+    "format": "prettier --write \"**/*.{js,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md,yml,yaml}\""
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@actions/github": "^6.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.11",
+    "prettier": "^3.6.2"
+  }
+}

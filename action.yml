@@ -1,0 +1,88 @@
+name: "Check New Code Coverage"
+description: "Run diff-cover to check new code coverage (LCOV/JUnit XML) and comment on PR"
+
+inputs:
+  coverage-file:
+    description: "Path to LCOV or JUnit XML file"
+    required: true
+  min-coverage:
+    description: "Minimum overall project coverage % required (optional - if not provided, overall coverage check is disabled)"
+    required: false
+  min-coverage-new-code:
+    description: "Minimum new code coverage % required (optional - if not provided, diff coverage check is disabled)"
+    required: false
+  base-branch:
+    description: "Branch to compare against (e.g. origin/main)"
+    required: false
+    default: "origin/main"
+  github-token:
+    description: "GitHub token for commenting on PR"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+
+    - name: Cache apt packages
+      if: runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        path: |
+          /var/cache/apt/archives
+          /var/lib/apt/lists
+        key: ${{ runner.os }}-apt-lcov-v1
+        restore-keys: |
+          ${{ runner.os }}-apt-
+
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        if command -v apt-get &> /dev/null; then
+          sudo apt-get update
+          sudo apt-get install -y lcov
+        elif command -v brew &> /dev/null; then
+          brew install lcov
+        else
+          echo "⚠️ Warning: Unable to install lcov (unsupported package manager)"
+        fi
+
+    - name: Cache Node dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.action_path }}/node_modules
+        key: ${{ runner.os }}-node-coverage-action-v1
+        restore-keys: |
+          ${{ runner.os }}-node-coverage-action-
+
+    - name: Install Python dependencies
+      shell: bash
+      run: pip install diff-cover
+
+    - name: Install Node dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --omit=dev
+
+    - name: Configure Git
+      shell: bash
+      run: git config --global --add safe.directory '*'
+
+    - name: Run coverage checks
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: node dist/index.js
+      env:
+        INPUT_COVERAGE-FILE: ${{ inputs.coverage-file }}
+        INPUT_MIN-COVERAGE: ${{ inputs.min-coverage }}
+        INPUT_MIN-COVERAGE-NEW-CODE: ${{ inputs.min-coverage-new-code }}
+        INPUT_BASE-BRANCH: ${{ inputs.base-branch }}
+        INPUT_GITHUB-TOKEN: ${{ inputs.github-token }}

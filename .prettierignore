@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Coverage
+coverage/
+
+# Logs
+*.log
+
+# Package lock
+package-lock.json
+
+# Code review
+CODE_REVIEW.md
+*.md
+
