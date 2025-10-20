@@ -25,7 +25,8 @@
     "test:watch": "node --test --watch",
     "check-dist": "npm run build && git diff --exit-code dist/ || (echo '❌ dist/ is not up to date. Run npm run build and commit the changes.' && exit 1)",
     "format": "prettier --write \"**/*.{js,json,md,yml,yaml}\"",
-    "format:check": "prettier --check \"**/*.{js,json,md,yml,yaml}\""
+    "format:check": "prettier --check \"**/*.{js,json,md,yml,yaml}\"",
+    "prepare": "husky || true"
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.11",
+    "husky": "^9.1.7",
     "prettier": "^3.6.2"
   }
 }

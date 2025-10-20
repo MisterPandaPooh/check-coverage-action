@@ -112,11 +112,15 @@ import * as core from "@actions/core";
 import { execSync } from "child_process";
 function extractTotalCoverageWithTool(coverageFile) {
   try {
+    core.info(`extractTotalCoverageWithTool ${coverageFile}`);
     if (coverageFile.endsWith(".info")) {
-      const output = execSync(`lcov --summary ${coverageFile}`, {
-        encoding: "utf8",
-        stderr: "pipe"
+      const output = execSync(`lcov --summary ${coverageFile} 2>&1`, {
+        encoding: "utf8"
       });
+      core.info("=== LCOV Summary Output ===");
+      const lines = output.split("\n").filter((line) => line.trim());
+      lines.forEach((line) => core.info(line));
+      core.info("=== End LCOV Summary ===");
       const match = output.match(/lines[.\s]+:\s+([0-9.]+)%/);
       if (match) {
         return parseFloat(match[1]);
@@ -126,6 +130,10 @@ function extractTotalCoverageWithTool(coverageFile) {
  ${output}`);
     } else {
       const output = execSync(`coverage-report ${coverageFile}`, { encoding: "utf8" });
+      core.info("=== Coverage Report Output ===");
+      const lines = output.split("\n").filter((line) => line.trim());
+      lines.forEach((line) => core.info(line));
+      core.info("=== End Coverage Report ===");
       const match = output.match(/Total[:\s]+([0-9.]+)%/);
       if (match) {
         return parseFloat(match[1]);
@@ -142,18 +150,22 @@ function extractTotalCoverageWithTool(coverageFile) {
 }
 function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) {
   core.info(`\u{1F4E6} Running diff-cover on ${coverageFile} vs ${baseBranch}`);
+  const compareBranch = baseBranch.startsWith("origin/") ? baseBranch : `origin/${baseBranch}`;
+  const branchName = baseBranch.replace("origin/", "");
   try {
-    execSync(`git fetch origin ${baseBranch} --depth=1`, { stdio: "inherit" });
+    execSync(`git fetch origin ${branchName}:refs/remotes/origin/${branchName} --depth=1`, {
+      stdio: "inherit"
+    });
   } catch (error3) {
     throw new Error(
-      `Failed to fetch branch ${baseBranch}: ${error3.message}. Make sure the branch exists and is accessible.`
+      `Failed to fetch branch ${branchName}: ${error3.message}. Make sure the branch exists and is accessible.`
     );
   }
   let diffOutput = "";
   let diffCoverage = null;
   let passed = false;
   try {
-    diffOutput = execSync(`diff-cover ${coverageFile} --compare-branch=${baseBranch}`, {
+    diffOutput = execSync(`diff-cover ${coverageFile} --compare-branch=${compareBranch}`, {
       encoding: "utf8"
     });
   } catch (error3) {
@@ -221,6 +233,7 @@ async function run() {
       );
       return;
     }
+    console.log("coverageFile", coverageFile);
     const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode);
     const hasFailed = results.some((r) => !r.passed);
     const prNumber = context2.payload.pull_request?.number;
