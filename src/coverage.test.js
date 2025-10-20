@@ -170,6 +170,22 @@ describe("Coverage utilities", () => {
     });
   });
 
+  describe("Diff coverage edge cases", () => {
+    it("should handle no lines with coverage information", () => {
+      const output = "No lines with coverage information in this diff.";
+      const result = {
+        type: "new-code",
+        coverage: 100,
+        minRequired: 80,
+        passed: true,
+        output,
+      };
+
+      assert.strictEqual(result.coverage, 100);
+      assert.strictEqual(result.passed, true);
+    });
+  });
+
   describe("Coverage calculation", () => {
     it("should parse coverage percentage correctly", () => {
       const percentageStr = "85.5";

@@ -42,7 +42,10 @@ async function run() {
     if (hasFailed) {
       const failedChecks = results
         .filter((r) => !r.passed)
-        .map((r) => r.type)
+        .map((r) => {
+          const coverage = r.coverage !== null ? `${r.coverage.toFixed(2)}%` : "unknown";
+          return `${r.type} (current: ${coverage}, expected: ${r.minRequired}%)`;
+        })
         .join(", ");
       core.setFailed(`❌ Coverage check(s) failed: ${failedChecks}`);
     } else {

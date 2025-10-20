@@ -121,12 +121,18 @@ function extractTotalCoverageWithTool(coverageFile) {
       if (match) {
         return parseFloat(match[1]);
       }
+      core.info(`lcov output 
+
+ ${output}`);
     } else {
       const output = execSync(`coverage-report ${coverageFile}`, { encoding: "utf8" });
       const match = output.match(/Total[:\s]+([0-9.]+)%/);
       if (match) {
         return parseFloat(match[1]);
       }
+      core.info(`coverage-report(xml) 
+
+ ${output}`);
     }
     return null;
   } catch (error3) {
@@ -145,6 +151,7 @@ function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) {
   }
   let diffOutput = "";
   let diffCoverage = null;
+  let passed = false;
   try {
     diffOutput = execSync(`diff-cover ${coverageFile} --compare-branch=${baseBranch}`, {
       encoding: "utf8"
@@ -152,9 +159,18 @@ function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) {
   } catch (error3) {
     diffOutput = error3.stdout || error3.message;
   }
-  const match = diffOutput.match(/Diff Coverage:\s+([0-9.]+)%/);
-  diffCoverage = match ? parseFloat(match[1]) : null;
-  const passed = diffCoverage !== null && diffCoverage >= minCoverageNewCode;
+  if (diffOutput.includes("No lines with coverage information in this diff")) {
+    core.info("No lines with coverage information found in the diff - considering this as passing");
+    diffCoverage = 100;
+    passed = true;
+  } else {
+    const match = diffOutput.match(/Diff Coverage:\s+([0-9.]+)%/);
+    diffCoverage = match ? parseFloat(match[1]) : null;
+    passed = diffCoverage !== null && diffCoverage >= minCoverageNewCode;
+  }
+  core.info(`diff-cover output 
+
+ ${diffOutput}`);
   return {
     type: "new-code",
     coverage: diffCoverage,
@@ -215,7 +231,10 @@ async function run() {
       core2.info("Not a PR - skipping comment");
     }
     if (hasFailed) {
-      const failedChecks = results.filter((r) => !r.passed).map((r) => r.type).join(", ");
+      const failedChecks = results.filter((r) => !r.passed).map((r) => {
+        const coverage = r.coverage !== null ? `${r.coverage.toFixed(2)}%` : "unknown";
+        return `${r.type} (current: ${coverage}, expected: ${r.minRequired}%)`;
+      }).join(", ");
       core2.setFailed(`\u274C Coverage check(s) failed: ${failedChecks}`);
     } else {
       core2.info("\u2705 All coverage checks passed");

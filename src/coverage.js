@@ -19,6 +19,7 @@ export function extractTotalCoverageWithTool(coverageFile) {
       if (match) {
         return parseFloat(match[1]);
       }
+      core.info(`lcov output \n\n ${output}`);
     } else {
       // For XML formats (Cobertura, JaCoCo), use coverage-report from diff-cover package
       const output = execSync(`coverage-report ${coverageFile}`, { encoding: "utf8" });
@@ -27,6 +28,8 @@ export function extractTotalCoverageWithTool(coverageFile) {
       if (match) {
         return parseFloat(match[1]);
       }
+
+      core.info(`coverage-report(xml) \n\n ${output}`);
     }
 
     return null;
@@ -58,6 +61,7 @@ export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) 
 
   let diffOutput = "";
   let diffCoverage = null;
+  let passed = false;
 
   try {
     // Run diff-cover (Python CLI) without fail-under to handle failure ourselves
@@ -69,11 +73,19 @@ export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) 
     diffOutput = error.stdout || error.message;
   }
 
-  // Extract coverage percentage from diff-cover output
-  const match = diffOutput.match(/Diff Coverage:\s+([0-9.]+)%/);
-  diffCoverage = match ? parseFloat(match[1]) : null;
+  // Check if there are no lines to cover
+  if (diffOutput.includes("No lines with coverage information in this diff")) {
+    core.info("No lines with coverage information found in the diff - considering this as passing");
+    diffCoverage = 100; // Set to 100% since there's nothing to check
+    passed = true;
+  } else {
+    // Extract coverage percentage from diff-cover output
+    const match = diffOutput.match(/Diff Coverage:\s+([0-9.]+)%/);
+    diffCoverage = match ? parseFloat(match[1]) : null;
+    passed = diffCoverage !== null && diffCoverage >= minCoverageNewCode;
+  }
 
-  const passed = diffCoverage !== null && diffCoverage >= minCoverageNewCode;
+  core.info(`diff-cover output \n\n ${diffOutput}`);
 
   return {
     type: "new-code",
