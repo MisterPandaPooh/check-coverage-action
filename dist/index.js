@@ -125,7 +125,7 @@ function extractTotalCoverageWithTool(coverageFile) {
       if (match) {
         return parseFloat(match[1]);
       }
-      core.info(`lcov output
+      core.info(`lcov output 
 
  ${output}`);
     } else {
@@ -138,7 +138,7 @@ function extractTotalCoverageWithTool(coverageFile) {
       if (match) {
         return parseFloat(match[1]);
       }
-      core.info(`coverage-report(xml)
+      core.info(`coverage-report(xml) 
 
  ${output}`);
     }
@@ -180,7 +180,7 @@ function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) {
     diffCoverage = match ? parseFloat(match[1]) : null;
     passed = diffCoverage !== null && diffCoverage >= minCoverageNewCode;
   }
-  core.info(`diff-cover output
+  core.info(`diff-cover output 
 
  ${diffOutput}`);
   return {
