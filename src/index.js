@@ -27,6 +27,8 @@ async function run() {
       return;
     }
 
+    console.log("coverageFile", coverageFile);
+
     const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode);
     const hasFailed = results.some((r) => !r.passed);
 

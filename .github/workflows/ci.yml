@@ -74,6 +74,6 @@ jobs:
         with:
           coverage-file: coverage/lcov.info
           min-coverage: 100
-          min-coverage-new-code: 80
+          min-coverage-new-code: ${{ github.event_name == 'pull_request' && '80' || '' }}
           base-branch: ${{ github.base_ref || 'main' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
