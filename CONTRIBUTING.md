@@ -41,7 +41,8 @@ npm run test:watch
 
 **⚠️ IMPORTANT:** The `dist/` folder must be committed!
 
-GitHub Actions runs the bundled code in `dist/index.js`, not the source files.
+GitHub Actions runs the bundled code in `dist/index.cjs`, not the source files. The bundle is
+self-contained (dependencies included), so the action never runs `npm install` at runtime.
 
 ```bash
 # Build the bundled distribution
@@ -83,6 +84,22 @@ npm test
 ### Integration Test (Self-Test)
 
 The CI workflow includes a self-test job that uses the action to check its own coverage. You can see this in action when you open a PR.
+
+### Local End-to-End Run
+
+The bundle can be run outside GitHub against any git checkout: it reads the inputs from
+`INPUT_*` environment variables and the workspace from `GITHUB_WORKSPACE`.
+
+```bash
+pip install diff-cover
+npm run build
+GITHUB_WORKSPACE=/path/to/repo \
+INPUT_COVERAGE-FILE=coverage/lcov.info INPUT_BASE-BRANCH=main \
+INPUT_MIN-COVERAGE=80 INPUT_MIN-COVERAGE-NEW-CODE=80 INPUT_GITHUB-TOKEN=x \
+node dist/index.cjs
+```
+
+Outside a pull request event no comment is posted, only the checks run.
 
 ### Manual Testing
 
