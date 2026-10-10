@@ -18,8 +18,8 @@ This action uses **[diff-cover](https://github.com/Bachmann1234/diff_cover)** un
 - 📊 **Check overall coverage** - Ensure project-wide coverage standards
 - 💬 **Automatic PR comments** - Clear visual feedback on every PR
 - 🚨 **Fail CI on insufficient coverage** - Prevent merging untested code
-- 📄 **Multiple formats** - Supports LCOV, Cobertura XML, JaCoCo XML, and more
-- ⚡ **Fast and efficient** - Analyzes only changed lines using `diff-cover`
+- 📄 **Multiple formats** - Supports LCOV, Cobertura XML and JaCoCo XML
+- ⚡ **Fast and efficient** - No system packages to install, analyzes only changed lines using `diff-cover`
 
 ---
 
@@ -37,6 +37,9 @@ on:
 jobs:
   coverage-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # needed to post the comment
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,10 +89,10 @@ jobs:
 
 | Input                   | Description                                                                            | Required | Default       |
 | ----------------------- | -------------------------------------------------------------------------------------- | -------- | ------------- |
-| `coverage-file`         | Path to LCOV or XML coverage file                                                      | ✅       | -             |
+| `coverage-file`         | Path to the LCOV, Cobertura XML or JaCoCo XML file, relative to the workspace          | ✅       | -             |
 | `min-coverage`          | Minimum overall project coverage % required (optional - if not set, check is disabled) | ❌       | -             |
 | `min-coverage-new-code` | Minimum new code coverage % required (optional - if not set, check is disabled)        | ❌       | -             |
-| `base-branch`           | Comparison branch (used for new code coverage check)                                   | ❌       | `origin/main` |
+| `base-branch`           | Comparison branch, with or without the `origin/` prefix                                | ❌       | `origin/main` |
 | `github-token`          | GitHub token to comment on PR                                                          | ✅       | -             |
 
 **Note:** At least one of `min-coverage` or `min-coverage-new-code` should be set, otherwise no coverage checks will be performed.
@@ -98,14 +101,15 @@ jobs:
 
 ## 🔧 How It Works
 
-This is a composite action that sets up Node.js and Python with caching for fast execution. When triggered on a pull request:
+This is a composite action that sets up Node.js 24 and Python, then runs a single bundled script from your repository's workspace:
 
-1. **Sets up Node.js and Python** with dependency caching for faster subsequent runs
-2. **Analyzes your coverage file** (LCOV or XML format)
-3. **Checks overall coverage** (optional) - Uses `lcov` or `coverage-report` tools
-4. **Checks new code coverage** (optional) - Uses `diff-cover` to analyze only changed lines
-5. **Posts a comment** on your PR with detailed results
-6. **Passes or fails** the CI check based on your thresholds
+1. **Reads your coverage file** and computes the overall line coverage itself (LCOV, Cobertura XML or JaCoCo XML, detected by content)
+2. **Checks overall coverage** (optional) against `min-coverage`
+3. **Checks new code coverage** (optional) - fetches `base-branch` and runs `diff-cover` on the lines changed since it
+4. **Posts or updates a comment** on your PR with the results
+5. **Passes or fails** the CI check based on your thresholds
+
+When the diff contains no coverable line (docs only, config only…), the new code check is reported as **skipped** and passes.
 
 ---
 
@@ -113,43 +117,42 @@ This is a composite action that sets up Node.js and Python with caching for fast
 
 When both checks are enabled:
 
-> 🧮 **Coverage Report**
+> ## 📊 Coverage Report
 >
-> ### 📊 Overall Project Coverage
->
-> **Coverage:** 75.30%  
-> **Minimum required:** 70%  
-> **Status:** ✅ Pass
->
-> ### 🆕 New Code Coverage
->
-> **Coverage:** 92.50%  
-> **Minimum required:** 90%  
-> **Status:** ✅ Pass
+> | Type                   | Coverage                 | Required | Status  |
+> | ---------------------- | ------------------------ | -------- | ------- |
+> | **📦 Overall Project** | `75.30%` `diff: +5.30%`  | 70%      | passing |
+> | **🆕 New Code (Diff)** | `92.50%` `diff: +2.50%`  | 90%      | passing |
 >
 > <details>
-> <summary>📜 diff-cover output</summary>
+> <summary>📋 View detailed diff-cover report</summary>
 >
 > ```
-> Diff Coverage: 92.5%
-> src/utils/parser.js (95%)
-> src/components/Header.tsx (90%)
+> src/utils/parser.js (95.0%): Missing lines 12
+> src/components/Header.tsx (90.0%): Missing lines 40-41
+> Total:   40 lines
+> Missing: 3 lines
+> Coverage: 92%
 > ```
 >
 > </details>
 >
 > ---
 >
-> **Overall Status:** ✅ All checks passed
+> **Overall: Passing**
+
+The real comment uses shields.io badges instead of inline code.
 
 ---
 
 ## 📝 Important Notes
 
-- **Git history required**: When using `min-coverage-new-code`, make sure to set `fetch-depth: 0` in `actions/checkout` to have full Git history for comparison
-- **Base branch**: For pull request workflows, use `origin/${{ github.base_ref }}`. For workflows that run on both push and PR events, use `origin/${{ github.base_ref || 'main' }}` to fallback to main branch
+- **Git history**: `min-coverage-new-code` needs the merge base between your branch and `base-branch`. With the default shallow checkout the action fetches the full history itself (with a warning); set `fetch-depth: 0` in `actions/checkout` to avoid that extra fetch on every run
+- **Working tree**: `diff-cover` also counts uncommitted changes to tracked files. Make sure your test step does not rewrite tracked sources before the action runs
+- **Base branch**: For pull request workflows, use `${{ github.base_ref }}` (or `origin/${{ github.base_ref }}`, both work). For workflows that run on both push and PR events, use `${{ github.base_ref || 'main' }}` to fall back to main
+- **Permissions**: posting the comment needs `pull-requests: write` on the job. Without it (for example on a PR from a fork) the comment is skipped with a warning and the check still passes or fails on the thresholds
 - **Flexible checks**: You can enable overall coverage check, new code coverage check, or both - use what works best for your project
-- **Multiple formats**: Supports LCOV (`.info`), Cobertura XML, JaCoCo XML, and other common coverage formats
+- **Multiple formats**: Supports LCOV (`.info`), Cobertura XML and JaCoCo XML
 
 ---
 

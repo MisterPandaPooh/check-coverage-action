@@ -216,4 +216,26 @@ Total: 42 lines added, 39 covered`;
 
     assert.ok(body.includes("-5.00"));
   });
+
+  it("reports n/a instead of a fake 100% when the diff has no coverable lines", () => {
+    const results = [
+      {
+        type: "new-code",
+        coverage: null,
+        minRequired: 80,
+        passed: true,
+        skipped: true,
+        output: "No lines with coverage information in this diff.",
+      },
+    ];
+
+    const body = buildCommentBody(results);
+
+    assert.ok(body.includes("New Code (Diff)"));
+    assert.ok(body.includes("coverage-n%2Fa-lightgrey"));
+    assert.ok(body.includes("status-skipped"));
+    assert.ok(!body.includes("100.00"));
+    assert.ok(!body.includes("unknown"));
+    assert.ok(body.includes("Overall-Passing"));
+  });
 });

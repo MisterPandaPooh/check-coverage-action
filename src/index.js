@@ -1,30 +1,45 @@
 import * as core from "@actions/core";
 import { context } from "@actions/github";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { postOrUpdateComment } from "./comment.js";
 import { runCoverageChecks } from "./coverage.js";
 
+function parseThreshold(name) {
+  const raw = core.getInput(name).trim();
+  if (raw === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw new Error(`${name} must be a number between 0 and 100, got "${raw}"`);
+  }
+  return value;
+}
+
 async function run() {
   try {
-    const coverageFile = core.getInput("coverage-file");
-    const baseBranch = core.getInput("base-branch");
-    const token = core.getInput("github-token");
-    const minCoverageInput = core.getInput("min-coverage");
-    const minCoverageNewCodeInput = core.getInput("min-coverage-new-code");
+    // The action runs from the caller's workspace so relative paths and git commands apply to it
+    const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
+    process.chdir(workspace);
 
-    core.info(`Debug - min-coverage input: "${minCoverageInput}"`);
-    core.info(`Debug - min-coverage-new-code input: "${minCoverageNewCodeInput}"`);
+    const coverageFile = resolve(workspace, core.getInput("coverage-file", { required: true }));
+    const baseBranch = core.getInput("base-branch") || "origin/main";
+    const token = core.getInput("github-token", { required: true });
+    const minCoverage = parseThreshold("min-coverage");
+    const minCoverageNewCode = parseThreshold("min-coverage-new-code");
 
-    const minCoverage = minCoverageInput ? parseFloat(minCoverageInput) : null;
-    const minCoverageNewCode = minCoverageNewCodeInput ? parseFloat(minCoverageNewCodeInput) : null;
-
-    core.info(`Debug - parsed minCoverage: ${minCoverage}`);
-    core.info(`Debug - parsed minCoverageNewCode: ${minCoverageNewCode}`);
+    core.info(`coverage-file: ${coverageFile}`);
+    core.info(`min-coverage: ${minCoverage ?? "disabled"}`);
+    core.info(`min-coverage-new-code: ${minCoverageNewCode ?? "disabled"}`);
 
     if (minCoverage === null && minCoverageNewCode === null) {
       core.warning(
         "No coverage checks enabled. Set min-coverage or min-coverage-new-code to enable checks."
       );
       return;
+    }
+
+    if (!existsSync(coverageFile)) {
+      throw new Error(`Coverage file not found: ${coverageFile}`);
     }
 
     const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode);
@@ -34,7 +49,12 @@ async function run() {
     const prNumber = context.payload.pull_request?.number;
     if (prNumber) {
       core.info("Posting coverage report as PR comment");
-      await postOrUpdateComment(token, prNumber, results);
+      try {
+        await postOrUpdateComment(token, prNumber, results);
+      } catch (error) {
+        // A read-only token (fork PR) must not hide the coverage verdict itself
+        core.warning(`Could not post the PR comment: ${error.message}`);
+      }
     } else {
       core.info("Not a PR - skipping comment");
     }
@@ -52,7 +72,6 @@ async function run() {
       core.info("✅ All coverage checks passed");
     }
   } catch (error) {
-    core.error(error);
     core.setFailed(error.message);
   }
 }

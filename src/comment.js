@@ -4,7 +4,8 @@ import { context, getOctokit } from "@actions/github";
 const COMMENT_IDENTIFIER = "<!-- coverage-action-comment -->";
 
 function getBadge(label, message, color) {
-  const encodedMessage = message.replace(/%/g, "%25");
+  // shields.io path syntax: "-" and "_" are separators, so double them before URL-encoding
+  const encodedMessage = encodeURIComponent(message.replace(/-/g, "--").replace(/_/g, "__"));
   return `![${label}: ${message}](https://img.shields.io/badge/${label}-${encodedMessage}-${color})`;
 }
 
@@ -23,6 +24,12 @@ function formatCoverage(coverage) {
 }
 
 function buildTableRow(icon, label, result) {
+  if (result.skipped) {
+    const skippedBadge = getBadge("coverage", "n/a", "lightgrey");
+    const statusBadge = getBadge("status", "skipped", "lightgrey");
+    return `| **${icon} ${label}** | ${skippedBadge} | ${result.minRequired}% | ${statusBadge} |\n`;
+  }
+
   const coverageStr = formatCoverage(result.coverage);
   const coverageBadge =
     result.coverage !== null

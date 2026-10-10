@@ -1,98 +1,228 @@
 import * as core from "@actions/core";
-import { execSync } from "child_process";
+import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+
+const NO_LINES_MESSAGE = "No lines with coverage information in this diff";
+
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function percent(covered, total) {
+  return total > 0 ? round2((covered / total) * 100) : null;
+}
 
 /**
- * Extracts total coverage percentage from a coverage file using appropriate tools
- * @param {string} coverageFile - Path to the coverage file (LCOV .info or XML format)
- * @returns {number|null} Coverage percentage (0-100) or null if extraction failed
+ * Sums line coverage over every record of an LCOV tracefile
+ * @param {string} text - LCOV file content
+ * @returns {{covered: number, total: number, percent: number|null}}
  */
-export function extractTotalCoverageWithTool(coverageFile) {
-  try {
-    // For LCOV files, use lcov --summary
-    if (coverageFile.endsWith(".info")) {
-      const output = execSync(`lcov --summary ${coverageFile}`, {
-        encoding: "utf8",
-        stderr: "pipe",
-      });
-      // Output format: "lines......: 85.5% (171 of 200 lines)"
-      const match = output.match(/lines[.\s]+:\s+([0-9.]+)%/);
-      if (match) {
-        return parseFloat(match[1]);
-      }
-      core.info(`lcov output \n\n ${output}`);
-    } else {
-      // For XML formats (Cobertura, JaCoCo), use coverage-report from diff-cover package
-      const output = execSync(`coverage-report ${coverageFile}`, { encoding: "utf8" });
-      // Output format: "Total coverage: 87.50%"
-      const match = output.match(/Total[:\s]+([0-9.]+)%/);
-      if (match) {
-        return parseFloat(match[1]);
-      }
+export function parseLcovTotal(text) {
+  let covered = 0;
+  let total = 0;
+  // Per record: prefer LF/LH, fall back to counting DA lines
+  let recordHasSummary = false;
+  let daCovered = 0;
+  let daTotal = 0;
 
-      core.info(`coverage-report(xml) \n\n ${output}`);
+  const flushRecord = () => {
+    if (!recordHasSummary) {
+      covered += daCovered;
+      total += daTotal;
     }
+    recordHasSummary = false;
+    daCovered = 0;
+    daTotal = 0;
+  };
 
-    return null;
-  } catch (error) {
-    core.error(`Error extracting total coverage: ${error.message}`);
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (line.startsWith("LF:")) {
+      total += parseInt(line.slice(3), 10) || 0;
+      recordHasSummary = true;
+    } else if (line.startsWith("LH:")) {
+      covered += parseInt(line.slice(3), 10) || 0;
+      recordHasSummary = true;
+    } else if (line.startsWith("DA:")) {
+      const hits = parseInt(line.slice(3).split(",")[1], 10) || 0;
+      daTotal += 1;
+      if (hits > 0) daCovered += 1;
+    } else if (line === "end_of_record") {
+      flushRecord();
+    }
+  }
+  flushRecord();
+
+  return { covered, total, percent: percent(covered, total) };
+}
+
+function readAttr(tag, name) {
+  const match = tag.match(new RegExp(`\\b${name}="([^"]*)"`));
+  return match ? match[1] : null;
+}
+
+/**
+ * Extracts total line coverage from a Cobertura or JaCoCo XML report
+ * @param {string} text - XML file content
+ * @returns {number|null} Coverage percentage (0-100) or null when not recognised
+ */
+export function parseXmlTotal(text) {
+  // Cobertura: <coverage line-rate="0.81" lines-covered="13" lines-valid="16">
+  const coverageTag = text.match(/<coverage\b[^>]*>/);
+  if (coverageTag) {
+    const linesCovered = readAttr(coverageTag[0], "lines-covered");
+    const linesValid = readAttr(coverageTag[0], "lines-valid");
+    if (linesCovered !== null && linesValid !== null) {
+      return percent(parseInt(linesCovered, 10), parseInt(linesValid, 10));
+    }
+    const lineRate = readAttr(coverageTag[0], "line-rate");
+    if (lineRate !== null) return round2(parseFloat(lineRate) * 100);
     return null;
   }
+
+  // JaCoCo: the report-level <counter type="LINE"> is the last one in the document
+  if (/<report\b/.test(text)) {
+    const counters = [...text.matchAll(/<counter\b[^>]*type="LINE"[^>]*\/?>/g)];
+    const last = counters.at(-1);
+    if (last) {
+      const missed = parseInt(readAttr(last[0], "missed"), 10) || 0;
+      const covered = parseInt(readAttr(last[0], "covered"), 10) || 0;
+      return percent(covered, missed + covered);
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Reads total coverage from an LCOV or XML (Cobertura/JaCoCo) file, detected by content
+ * @param {string} coverageFile - Path to the coverage file
+ * @returns {number|null} Coverage percentage (0-100) or null if it could not be read
+ */
+export function readTotalCoverage(coverageFile) {
+  let text;
+  try {
+    text = readFileSync(coverageFile, "utf8");
+  } catch (error) {
+    core.error(`Cannot read coverage file ${coverageFile}: ${error.message}`);
+    return null;
+  }
+
+  const result = text.trimStart().startsWith("<")
+    ? parseXmlTotal(text)
+    : parseLcovTotal(text).percent;
+  if (result === null) {
+    core.error(`Could not extract a line coverage total from ${coverageFile}`);
+  }
+  return result;
+}
+
+/**
+ * Splits a base-branch input into remote, branch and the ref diff-cover should use
+ * @param {string} baseBranch - "main" or "origin/main"
+ * @returns {{remote: string, branch: string, ref: string}}
+ */
+export function normalizeBaseBranch(baseBranch) {
+  const value = (baseBranch ?? "").trim();
+  if (!value) throw new Error("base-branch input must not be empty");
+  const branch = value.startsWith("origin/") ? value.slice("origin/".length) : value;
+  return { remote: "origin", branch, ref: `origin/${branch}` };
+}
+
+/**
+ * Parses the console output of diff-cover
+ * @param {string} output
+ * @returns {{coverage: number|null, noLines: boolean}}
+ */
+export function parseDiffCoverOutput(output) {
+  if (output.includes(NO_LINES_MESSAGE)) return { coverage: null, noLines: true };
+
+  // diff-cover >= 9 prints "Total: N lines / Missing: M lines" and a rounded "Coverage: X%"
+  const total = output.match(/^Total:\s+(\d+)\s+lines?/m);
+  const missing = output.match(/^Missing:\s+(\d+)\s+lines?/m);
+  if (total && missing) {
+    const totalLines = parseInt(total[1], 10);
+    if (totalLines > 0) {
+      return {
+        coverage: percent(totalLines - parseInt(missing[1], 10), totalLines),
+        noLines: false,
+      };
+    }
+  }
+
+  const match = output.match(/^(?:Diff )?Coverage:\s+([0-9.]+)%/m);
+  return { coverage: match ? parseFloat(match[1]) : null, noLines: false };
+}
+
+function defaultExec(command) {
+  return execSync(command, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+function quote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
 
 /**
  * Checks coverage for new/changed code using diff-cover
  * @param {string} coverageFile - Path to the coverage file
- * @param {string} baseBranch - Base branch to compare against (e.g., "origin/main")
+ * @param {string} baseBranch - Base branch to compare against ("main" or "origin/main")
  * @param {number} minCoverageNewCode - Minimum required coverage percentage for new code
- * @returns {{type: string, coverage: number|null, minRequired: number, passed: boolean, output: string}}
- *          Result object with coverage check details and diff-cover output
+ * @param {{exec?: (command: string) => string}} [options] - exec override, used by tests
+ * @returns {{type: string, coverage: number|null, minRequired: number, passed: boolean, skipped: boolean, output: string}}
  */
-export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) {
-  core.info(`📦 Running diff-cover on ${coverageFile} vs ${baseBranch}`);
+export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options = {}) {
+  const exec = options.exec ?? defaultExec;
+  const { remote, branch, ref } = normalizeBaseBranch(baseBranch);
+  core.info(`📦 Running diff-cover on ${coverageFile} vs ${ref}`);
 
-  // Fetch the base branch - fail if this doesn't work
+  // A shallow checkout (actions/checkout default) has no merge base: unshallow while fetching
+  let shallow = false;
   try {
-    execSync(`git fetch origin ${baseBranch} --depth=1`, { stdio: "inherit" });
+    shallow = exec("git rev-parse --is-shallow-repository").trim() === "true";
   } catch (error) {
-    throw new Error(
-      `Failed to fetch branch ${baseBranch}: ${error.message}. Make sure the branch exists and is accessible.`
+    throw new Error(`The workspace is not a git repository: ${error.message}`);
+  }
+  if (shallow) {
+    core.warning(
+      "Shallow checkout detected: fetching the full history. " +
+        "Set fetch-depth: 0 on actions/checkout to avoid this on every run."
     );
   }
 
-  let diffOutput = "";
-  let diffCoverage = null;
-  let passed = false;
-
+  // Fetch into refs/remotes so diff-cover can resolve "origin/<branch>" whatever the checkout did
+  const unshallow = shallow ? "--unshallow " : "";
   try {
-    // Run diff-cover (Python CLI) without fail-under to handle failure ourselves
-    diffOutput = execSync(`diff-cover ${coverageFile} --compare-branch=${baseBranch}`, {
-      encoding: "utf8",
-    });
+    exec(
+      `git fetch --no-tags ${unshallow}${remote} +refs/heads/${branch}:refs/remotes/${remote}/${branch}`
+    );
   } catch (error) {
-    // diff-cover may throw if coverage is low, but we still want the output
-    diffOutput = error.stdout || error.message;
+    throw new Error(
+      `Failed to fetch branch ${branch} from ${remote}: ${error.message}. ` +
+        "Make sure the branch exists and is accessible."
+    );
   }
 
-  // Check if there are no lines to cover
-  if (diffOutput.includes("No lines with coverage information in this diff")) {
-    core.info("No lines with coverage information found in the diff - considering this as passing");
-    diffCoverage = 100; // Set to 100% since there's nothing to check
-    passed = true;
-  } else {
-    // Extract coverage percentage from diff-cover output
-    const match = diffOutput.match(/Diff Coverage:\s+([0-9.]+)%/);
-    diffCoverage = match ? parseFloat(match[1]) : null;
-    passed = diffCoverage !== null && diffCoverage >= minCoverageNewCode;
+  let output = "";
+  try {
+    output = exec(`diff-cover ${quote(coverageFile)} --compare-branch=${ref}`);
+  } catch (error) {
+    // diff-cover exits non-zero on low coverage but still prints the report
+    output = error.stdout || error.message;
   }
+  core.info(`diff-cover output\n\n${output}`);
 
-  core.info(`diff-cover output \n\n ${diffOutput}`);
+  const { coverage, noLines } = parseDiffCoverOutput(output);
+  if (noLines) {
+    core.info("No lines with coverage information in the diff - check skipped");
+  }
 
   return {
     type: "new-code",
-    coverage: diffCoverage,
+    coverage,
     minRequired: minCoverageNewCode,
-    passed,
-    output: diffOutput,
+    passed: noLines || (coverage !== null && coverage >= minCoverageNewCode),
+    skipped: noLines,
+    output,
   };
 }
 
@@ -100,19 +230,18 @@ export function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode) 
  * Checks overall project coverage from a coverage file
  * @param {string} coverageFile - Path to the coverage file (LCOV or XML)
  * @param {number} minCoverage - Minimum required overall coverage percentage
- * @returns {{type: string, coverage: number|null, minRequired: number, passed: boolean}}
- *          Result object with coverage check details
+ * @returns {{type: string, coverage: number|null, minRequired: number, passed: boolean, skipped: boolean}}
  */
 export function checkOverallCoverage(coverageFile, minCoverage) {
   core.info(`📊 Checking overall coverage from ${coverageFile}`);
-  const coverage = extractTotalCoverageWithTool(coverageFile);
-  const passed = coverage !== null && coverage >= minCoverage;
+  const coverage = readTotalCoverage(coverageFile);
 
   return {
     type: "overall",
     coverage,
     minRequired: minCoverage,
-    passed,
+    passed: coverage !== null && coverage >= minCoverage,
+    skipped: false,
   };
 }
 
@@ -122,14 +251,20 @@ export function checkOverallCoverage(coverageFile, minCoverage) {
  * @param {string} baseBranch - Base branch for diff comparison
  * @param {number|null} minCoverage - Minimum overall coverage (null to skip this check)
  * @param {number|null} minCoverageNewCode - Minimum new code coverage (null to skip this check)
- * @returns {Array<{type: string, coverage: number|null, minRequired: number, passed: boolean, output?: string}>}
- *          Array of result objects for each enabled check
+ * @param {{exec?: (command: string) => string}} [options] - exec override, used by tests
+ * @returns {Array<{type: string, coverage: number|null, minRequired: number, passed: boolean, skipped: boolean, output?: string}>}
  */
-export function runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode) {
+export function runCoverageChecks(
+  coverageFile,
+  baseBranch,
+  minCoverage,
+  minCoverageNewCode,
+  options = {}
+) {
   const results = [];
 
   if (minCoverageNewCode !== null) {
-    results.push(checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode));
+    results.push(checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options));
   }
 
   if (minCoverage !== null) {
