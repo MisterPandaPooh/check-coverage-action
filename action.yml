@@ -1,5 +1,9 @@
-name: "Check New Code Coverage"
-description: "Run diff-cover to check new code coverage (LCOV / Cobertura / JaCoCo) and comment on PR"
+name: "New Code Coverage Gate"
+description: "Fail a PR when new or overall line coverage (LCOV / Cobertura / JaCoCo) drops below your thresholds, with a PR comment"
+author: "MisterPandaPooh"
+branding:
+  icon: "shield"
+  color: "green"
 
 inputs:
   coverage-file:

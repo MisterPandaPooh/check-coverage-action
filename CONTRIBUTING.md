@@ -112,4 +112,10 @@ Create a test repository and reference your branch:
     min-coverage-new-code: 80
 ```
 
+## Releasing
+
+1. Make sure `main` is green and `dist/` is up to date.
+2. Publish a GitHub release tagged `vX.Y.Z` (semver). Tick "Publish this Action to the GitHub Marketplace" for marketplace releases.
+3. The `Release` workflow moves the major tag (`vX`) to that release, so `uses: MisterPandaPooh/check-coverage-action@v1` always points to the latest `v1.*.*`.
+
 For major changes, please open an issue first to discuss what you'd like to change.

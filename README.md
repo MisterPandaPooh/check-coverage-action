@@ -1,4 +1,8 @@
-# 🧮 Coverage Action
+# 🛡️ New Code Coverage Gate
+
+[![CI](https://github.com/MisterPandaPooh/check-coverage-action/actions/workflows/ci.yml/badge.svg)](https://github.com/MisterPandaPooh/check-coverage-action/actions/workflows/ci.yml)
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-New%20Code%20Coverage%20Gate-blue?logo=github)](https://github.com/marketplace/actions/new-code-coverage-gate)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A GitHub Action that enforces code coverage standards for your pull requests. Keep your codebase healthy by ensuring new code meets your coverage requirements!
 
