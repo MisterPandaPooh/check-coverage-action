@@ -147,7 +147,8 @@ The real comment uses shields.io badges instead of inline code.
 
 ## 📝 Important Notes
 
-- **Git history required**: When using `min-coverage-new-code`, set `fetch-depth: 0` in `actions/checkout`. With the default shallow checkout, git cannot find the merge base between your branch and `base-branch`
+- **Git history**: `min-coverage-new-code` needs the merge base between your branch and `base-branch`. With the default shallow checkout the action fetches the full history itself (with a warning); set `fetch-depth: 0` in `actions/checkout` to avoid that extra fetch on every run
+- **Working tree**: `diff-cover` also counts uncommitted changes to tracked files. Make sure your test step does not rewrite tracked sources before the action runs
 - **Base branch**: For pull request workflows, use `${{ github.base_ref }}` (or `origin/${{ github.base_ref }}`, both work). For workflows that run on both push and PR events, use `${{ github.base_ref || 'main' }}` to fall back to main
 - **Permissions**: posting the comment needs `pull-requests: write` on the job. Without it (for example on a PR from a fork) the comment is skipped with a warning and the check still passes or fails on the thresholds
 - **Flexible checks**: You can enable overall coverage check, new code coverage check, or both - use what works best for your project

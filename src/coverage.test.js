@@ -187,23 +187,35 @@ describe("checkDiffCoverage", () => {
     return { exec, calls };
   }
 
+  // exec call order: 1) is-shallow probe, 2) git fetch, 3) diff-cover
   it("fetches the base branch into origin/<branch> and passes when above the threshold", () => {
-    const { exec, calls } = fakeExec(["", "Diff Coverage: 90.0%\n"]);
+    const { exec, calls } = fakeExec(["false\n", "", "Diff Coverage: 90.0%\n"]);
     const result = checkDiffCoverage("cov.info", "main", 80, { exec });
 
-    assert.match(
-      calls[0],
-      /^git fetch --no-tags origin \+refs\/heads\/main:refs\/remotes\/origin\/main$/
+    assert.match(calls[0], /^git rev-parse --is-shallow-repository$/);
+    assert.strictEqual(
+      calls[1],
+      "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main"
     );
-    assert.match(calls[1], /^diff-cover .*cov\.info.* --compare-branch=origin\/main$/);
+    assert.match(calls[2], /^diff-cover .*cov\.info.* --compare-branch=origin\/main$/);
     assert.strictEqual(result.coverage, 90);
     assert.strictEqual(result.passed, true);
     assert.strictEqual(result.skipped, false);
   });
 
+  it("unshallows a shallow checkout so the merge base exists", () => {
+    const { exec, calls } = fakeExec(["true\n", "", "Diff Coverage: 90.0%\n"]);
+    checkDiffCoverage("cov.info", "main", 80, { exec });
+
+    assert.strictEqual(
+      calls[1],
+      "git fetch --no-tags --unshallow origin +refs/heads/main:refs/remotes/origin/main"
+    );
+  });
+
   it("fails when below the threshold even if diff-cover exits non-zero", () => {
     const err = Object.assign(new Error("exit 1"), { stdout: "Diff Coverage: 50.0%\n" });
-    const { exec } = fakeExec(["", err]);
+    const { exec } = fakeExec(["false\n", "", err]);
     const result = checkDiffCoverage("cov.info", "origin/main", 80, { exec });
 
     assert.strictEqual(result.coverage, 50);
@@ -212,7 +224,11 @@ describe("checkDiffCoverage", () => {
   });
 
   it("marks the check as skipped when the diff has no coverable lines", () => {
-    const { exec } = fakeExec(["", "No lines with coverage information in this diff.\n"]);
+    const { exec } = fakeExec([
+      "false\n",
+      "",
+      "No lines with coverage information in this diff.\n",
+    ]);
     const result = checkDiffCoverage("cov.info", "main", 80, { exec });
 
     assert.strictEqual(result.coverage, null);
@@ -220,13 +236,18 @@ describe("checkDiffCoverage", () => {
     assert.strictEqual(result.skipped, true);
   });
 
+  it("throws a clear error when the workspace is not a git repository", () => {
+    const { exec } = fakeExec([new Error("not a git repository")]);
+    assert.throws(() => checkDiffCoverage("cov.info", "main", 80, { exec }), /git repository/);
+  });
+
   it("throws a clear error when the base branch cannot be fetched", () => {
-    const { exec } = fakeExec([new Error("couldn't find remote ref")]);
+    const { exec } = fakeExec(["false\n", new Error("couldn't find remote ref")]);
     assert.throws(() => checkDiffCoverage("cov.info", "main", 80, { exec }), /fetch .*main/);
   });
 
   it("fails when diff-cover output cannot be parsed", () => {
-    const { exec } = fakeExec(["", "diff-cover: command not found"]);
+    const { exec } = fakeExec(["false\n", "", "diff-cover: command not found"]);
     const result = checkDiffCoverage("cov.info", "main", 80, { exec });
     assert.strictEqual(result.coverage, null);
     assert.strictEqual(result.passed, false);

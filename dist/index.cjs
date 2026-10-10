@@ -24684,11 +24684,25 @@ function checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options
   const exec = options.exec ?? defaultExec;
   const { remote, branch, ref } = normalizeBaseBranch(baseBranch);
   info(`\u{1F4E6} Running diff-cover on ${coverageFile} vs ${ref}`);
+  let shallow = false;
   try {
-    exec(`git fetch --no-tags ${remote} +refs/heads/${branch}:refs/remotes/${remote}/${branch}`);
+    shallow = exec("git rev-parse --is-shallow-repository").trim() === "true";
+  } catch (error2) {
+    throw new Error(`The workspace is not a git repository: ${error2.message}`);
+  }
+  if (shallow) {
+    warning(
+      "Shallow checkout detected: fetching the full history. Set fetch-depth: 0 on actions/checkout to avoid this on every run."
+    );
+  }
+  const unshallow = shallow ? "--unshallow " : "";
+  try {
+    exec(
+      `git fetch --no-tags ${unshallow}${remote} +refs/heads/${branch}:refs/remotes/${remote}/${branch}`
+    );
   } catch (error2) {
     throw new Error(
-      `Failed to fetch branch ${branch} from ${remote}: ${error2.message}. Make sure the branch exists and that actions/checkout used fetch-depth: 0.`
+      `Failed to fetch branch ${branch} from ${remote}: ${error2.message}. Make sure the branch exists and is accessible.`
     );
   }
   let output = "";
