@@ -96,10 +96,33 @@ jobs:
 | `coverage-file`         | Path to the LCOV, Cobertura XML or JaCoCo XML file, relative to the workspace          | ✅       | -             |
 | `min-coverage`          | Minimum overall project coverage % required (optional - if not set, check is disabled) | ❌       | -             |
 | `min-coverage-new-code` | Minimum new code coverage % required (optional - if not set, check is disabled)        | ❌       | -             |
+| `min-coverage-mode`     | When overall coverage misses `min-coverage`: `fail` the job (default) or only `warn`   | ❌       | `fail`        |
+| `min-coverage-new-code-mode` | Same for new code coverage: `fail` (default) or `warn`                            | ❌       | `fail`        |
 | `base-branch`           | Comparison branch, with or without the `origin/` prefix                                | ❌       | `origin/main` |
 | `github-token`          | GitHub token to comment on PR                                                          | ✅       | -             |
 
 **Note:** At least one of `min-coverage` or `min-coverage-new-code` should be set, otherwise no coverage checks will be performed.
+
+### Enforce New Code, Only Warn on Overall Coverage
+
+Typical for a legacy codebase: new code must be tested, the global number is reported and
+annotated as a warning but never blocks the merge.
+
+```yaml
+- name: Check coverage
+  uses: MisterPandaPooh/check-coverage-action@v1
+  with:
+    coverage-file: coverage/lcov.info
+    min-coverage-new-code: 90 # fails the job when missed
+    min-coverage: 70 # only a warning when missed
+    min-coverage-mode: warn
+    base-branch: ${{ github.base_ref }}
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+A warn-mode miss shows a yellow `warning` badge in the PR comment, an "Overall: Passing with
+warnings" footer and a workflow warning annotation. `error` / `warning` are accepted as aliases
+of `fail` / `warn`.
 
 ---
 

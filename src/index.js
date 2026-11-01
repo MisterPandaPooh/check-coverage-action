@@ -15,6 +15,16 @@ function parseThreshold(name) {
   return value;
 }
 
+// Severity when a check misses its threshold: "fail" (alias "error") or "warn" (alias "warning")
+const MODES = { fail: "fail", error: "fail", warn: "warn", warning: "warn" };
+
+function parseMode(name) {
+  const raw = core.getInput(name).trim().toLowerCase() || "fail";
+  const mode = MODES[raw];
+  if (!mode) throw new Error(`${name} must be "fail" or "warn", got "${raw}"`);
+  return mode;
+}
+
 async function run() {
   try {
     // The action runs from the caller's workspace so relative paths and git commands apply to it
@@ -26,10 +36,12 @@ async function run() {
     const token = core.getInput("github-token", { required: true });
     const minCoverage = parseThreshold("min-coverage");
     const minCoverageNewCode = parseThreshold("min-coverage-new-code");
+    const overallMode = parseMode("min-coverage-mode");
+    const newCodeMode = parseMode("min-coverage-new-code-mode");
 
     core.info(`coverage-file: ${coverageFile}`);
-    core.info(`min-coverage: ${minCoverage ?? "disabled"}`);
-    core.info(`min-coverage-new-code: ${minCoverageNewCode ?? "disabled"}`);
+    core.info(`min-coverage: ${minCoverage ?? "disabled"} (${overallMode})`);
+    core.info(`min-coverage-new-code: ${minCoverageNewCode ?? "disabled"} (${newCodeMode})`);
 
     if (minCoverage === null && minCoverageNewCode === null) {
       core.warning(
@@ -42,8 +54,21 @@ async function run() {
       throw new Error(`Coverage file not found: ${coverageFile}`);
     }
 
-    const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode);
-    const hasFailed = results.some((r) => !r.passed);
+    const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode, {
+      overallMode,
+      newCodeMode,
+    });
+    const describe = (r) => {
+      const coverage = r.coverage !== null ? `${r.coverage.toFixed(2)}%` : "unknown";
+      return `${r.type} (current: ${coverage}, expected: ${r.minRequired}%)`;
+    };
+
+    // Warn-mode checks below their threshold are reported but never fail the job
+    const warned = results.filter((r) => !r.passed && r.mode === "warn");
+    for (const r of warned) {
+      core.warning(`⚠️ Coverage below threshold: ${describe(r)}`);
+    }
+    const failed = results.filter((r) => !r.passed && r.mode !== "warn");
 
     // Post comment if this is a PR
     const prNumber = context.payload.pull_request?.number;
@@ -59,15 +84,10 @@ async function run() {
       core.info("Not a PR - skipping comment");
     }
 
-    if (hasFailed) {
-      const failedChecks = results
-        .filter((r) => !r.passed)
-        .map((r) => {
-          const coverage = r.coverage !== null ? `${r.coverage.toFixed(2)}%` : "unknown";
-          return `${r.type} (current: ${coverage}, expected: ${r.minRequired}%)`;
-        })
-        .join(", ");
-      core.setFailed(`❌ Coverage check(s) failed: ${failedChecks}`);
+    if (failed.length > 0) {
+      core.setFailed(`❌ Coverage check(s) failed: ${failed.map(describe).join(", ")}`);
+    } else if (warned.length > 0) {
+      core.info(`✅ Coverage checks passed with ${warned.length} warning(s)`);
     } else {
       core.info("✅ All coverage checks passed");
     }

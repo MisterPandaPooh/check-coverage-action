@@ -282,4 +282,27 @@ describe("runCoverageChecks", () => {
       ]
     );
   });
+
+  it("defaults every check to fail mode", () => {
+    const results = runCoverageChecks(file, "main", 80, 90, { exec });
+    assert.deepStrictEqual(
+      results.map((r) => r.mode),
+      ["fail", "fail"]
+    );
+  });
+
+  it("tags each check with its configured mode", () => {
+    const results = runCoverageChecks(file, "main", 80, 90, {
+      exec,
+      overallMode: "warn",
+      newCodeMode: "fail",
+    });
+    assert.deepStrictEqual(
+      results.map((r) => [r.type, r.mode, r.passed]),
+      [
+        ["new-code", "fail", true],
+        ["overall", "warn", false],
+      ]
+    );
+  });
 });

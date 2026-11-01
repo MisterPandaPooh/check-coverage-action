@@ -15,6 +15,14 @@ inputs:
   min-coverage-new-code:
     description: "Minimum new code coverage % required (optional - if not provided, diff coverage check is disabled)"
     required: false
+  min-coverage-mode:
+    description: "What happens when overall coverage is below min-coverage: 'fail' the job (default) or only 'warn'"
+    required: false
+    default: "fail"
+  min-coverage-new-code-mode:
+    description: "What happens when new code coverage is below min-coverage-new-code: 'fail' the job (default) or only 'warn'"
+    required: false
+    default: "fail"
   base-branch:
     description: "Branch to compare against, with or without the origin/ prefix (e.g. main or origin/main)"
     required: false
@@ -52,5 +60,7 @@ runs:
         INPUT_COVERAGE-FILE: ${{ inputs.coverage-file }}
         INPUT_MIN-COVERAGE: ${{ inputs.min-coverage }}
         INPUT_MIN-COVERAGE-NEW-CODE: ${{ inputs.min-coverage-new-code }}
+        INPUT_MIN-COVERAGE-MODE: ${{ inputs.min-coverage-mode }}
+        INPUT_MIN-COVERAGE-NEW-CODE-MODE: ${{ inputs.min-coverage-new-code-mode }}
         INPUT_BASE-BRANCH: ${{ inputs.base-branch }}
         INPUT_GITHUB-TOKEN: ${{ inputs.github-token }}

@@ -24494,11 +24494,7 @@ function buildTableRow(icon, label, result) {
     `${diff >= 0 ? "+" : ""}${diff.toFixed(2)}%`,
     diff >= 0 ? "brightgreen" : "red"
   ) : "";
-  const statusBadge = getBadge(
-    "status",
-    result.passed ? "passing" : "failing",
-    result.passed ? "brightgreen" : "red"
-  );
+  const statusBadge = result.passed ? getBadge("status", "passing", "brightgreen") : result.mode === "warn" ? getBadge("status", "warning", "yellow") : getBadge("status", "failing", "red");
   return `| **${icon} ${label}** | ${coverageBadge} ${diffBadge} | ${result.minRequired}% | ${statusBadge} |
 `;
 }
@@ -24530,11 +24526,12 @@ ${newCodeCheck.output.trim()}
 
 `;
   }
-  const allPassed = results.every((r) => r.passed);
-  const status = allPassed ? "Passing" : "Failing";
-  const color = allPassed ? "brightgreen" : "red";
+  const hasFailure = results.some((r) => !r.passed && r.mode !== "warn");
+  const hasWarning = results.some((r) => !r.passed && r.mode === "warn");
+  const status = hasFailure ? "Failing" : hasWarning ? "Passing with warnings" : "Passing";
+  const color = hasFailure ? "red" : hasWarning ? "yellow" : "brightgreen";
   body += `---
-![Overall: ${status}](https://img.shields.io/badge/Overall-${status}-${color}?style=for-the-badge)`;
+![Overall: ${status}](https://img.shields.io/badge/Overall-${encodeURIComponent(status)}-${color}?style=for-the-badge)`;
   return body;
 }
 async function findExistingComment(octokit, owner, repo, issueNumber) {
@@ -24741,10 +24738,12 @@ function checkOverallCoverage(coverageFile, minCoverage) {
 function runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode, options = {}) {
   const results = [];
   if (minCoverageNewCode !== null) {
-    results.push(checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options));
+    const result = checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options);
+    results.push({ ...result, mode: options.newCodeMode ?? "fail" });
   }
   if (minCoverage !== null) {
-    results.push(checkOverallCoverage(coverageFile, minCoverage));
+    const result = checkOverallCoverage(coverageFile, minCoverage);
+    results.push({ ...result, mode: options.overallMode ?? "fail" });
   }
   return results;
 }
@@ -24759,6 +24758,13 @@ function parseThreshold(name) {
   }
   return value;
 }
+var MODES = { fail: "fail", error: "fail", warn: "warn", warning: "warn" };
+function parseMode(name) {
+  const raw = getInput(name).trim().toLowerCase() || "fail";
+  const mode = MODES[raw];
+  if (!mode) throw new Error(`${name} must be "fail" or "warn", got "${raw}"`);
+  return mode;
+}
 async function run() {
   try {
     const workspace = process.env.GITHUB_WORKSPACE || process.cwd();
@@ -24768,9 +24774,11 @@ async function run() {
     const token = getInput("github-token", { required: true });
     const minCoverage = parseThreshold("min-coverage");
     const minCoverageNewCode = parseThreshold("min-coverage-new-code");
+    const overallMode = parseMode("min-coverage-mode");
+    const newCodeMode = parseMode("min-coverage-new-code-mode");
     info(`coverage-file: ${coverageFile}`);
-    info(`min-coverage: ${minCoverage ?? "disabled"}`);
-    info(`min-coverage-new-code: ${minCoverageNewCode ?? "disabled"}`);
+    info(`min-coverage: ${minCoverage ?? "disabled"} (${overallMode})`);
+    info(`min-coverage-new-code: ${minCoverageNewCode ?? "disabled"} (${newCodeMode})`);
     if (minCoverage === null && minCoverageNewCode === null) {
       warning(
         "No coverage checks enabled. Set min-coverage or min-coverage-new-code to enable checks."
@@ -24780,8 +24788,19 @@ async function run() {
     if (!(0, import_node_fs2.existsSync)(coverageFile)) {
       throw new Error(`Coverage file not found: ${coverageFile}`);
     }
-    const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode);
-    const hasFailed = results.some((r) => !r.passed);
+    const results = runCoverageChecks(coverageFile, baseBranch, minCoverage, minCoverageNewCode, {
+      overallMode,
+      newCodeMode
+    });
+    const describe = (r) => {
+      const coverage = r.coverage !== null ? `${r.coverage.toFixed(2)}%` : "unknown";
+      return `${r.type} (current: ${coverage}, expected: ${r.minRequired}%)`;
+    };
+    const warned = results.filter((r) => !r.passed && r.mode === "warn");
+    for (const r of warned) {
+      warning(`\u26A0\uFE0F Coverage below threshold: ${describe(r)}`);
+    }
+    const failed = results.filter((r) => !r.passed && r.mode !== "warn");
     const prNumber = context2.payload.pull_request?.number;
     if (prNumber) {
       info("Posting coverage report as PR comment");
@@ -24793,12 +24812,10 @@ async function run() {
     } else {
       info("Not a PR - skipping comment");
     }
-    if (hasFailed) {
-      const failedChecks = results.filter((r) => !r.passed).map((r) => {
-        const coverage = r.coverage !== null ? `${r.coverage.toFixed(2)}%` : "unknown";
-        return `${r.type} (current: ${coverage}, expected: ${r.minRequired}%)`;
-      }).join(", ");
-      setFailed(`\u274C Coverage check(s) failed: ${failedChecks}`);
+    if (failed.length > 0) {
+      setFailed(`\u274C Coverage check(s) failed: ${failed.map(describe).join(", ")}`);
+    } else if (warned.length > 0) {
+      info(`\u2705 Coverage checks passed with ${warned.length} warning(s)`);
     } else {
       info("\u2705 All coverage checks passed");
     }

@@ -50,11 +50,12 @@ function buildTableRow(icon, label, result) {
         )
       : "";
 
-  const statusBadge = getBadge(
-    "status",
-    result.passed ? "passing" : "failing",
-    result.passed ? "brightgreen" : "red"
-  );
+  // A warn-mode check below its threshold is reported but does not fail the job
+  const statusBadge = result.passed
+    ? getBadge("status", "passing", "brightgreen")
+    : result.mode === "warn"
+      ? getBadge("status", "warning", "yellow")
+      : getBadge("status", "failing", "red");
 
   return `| **${icon} ${label}** | ${coverageBadge} ${diffBadge} | ${result.minRequired}% | ${statusBadge} |\n`;
 }
@@ -88,10 +89,11 @@ export function buildCommentBody(results) {
     body += `\`\`\`\n${newCodeCheck.output.trim()}\n\`\`\`\n</details>\n\n`;
   }
 
-  const allPassed = results.every((r) => r.passed);
-  const status = allPassed ? "Passing" : "Failing";
-  const color = allPassed ? "brightgreen" : "red";
-  body += `---\n![Overall: ${status}](https://img.shields.io/badge/Overall-${status}-${color}?style=for-the-badge)`;
+  const hasFailure = results.some((r) => !r.passed && r.mode !== "warn");
+  const hasWarning = results.some((r) => !r.passed && r.mode === "warn");
+  const status = hasFailure ? "Failing" : hasWarning ? "Passing with warnings" : "Passing";
+  const color = hasFailure ? "red" : hasWarning ? "yellow" : "brightgreen";
+  body += `---\n![Overall: ${status}](https://img.shields.io/badge/Overall-${encodeURIComponent(status)}-${color}?style=for-the-badge)`;
 
   return body;
 }
