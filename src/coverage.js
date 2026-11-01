@@ -251,8 +251,9 @@ export function checkOverallCoverage(coverageFile, minCoverage) {
  * @param {string} baseBranch - Base branch for diff comparison
  * @param {number|null} minCoverage - Minimum overall coverage (null to skip this check)
  * @param {number|null} minCoverageNewCode - Minimum new code coverage (null to skip this check)
- * @param {{exec?: (command: string) => string}} [options] - exec override, used by tests
- * @returns {Array<{type: string, coverage: number|null, minRequired: number, passed: boolean, skipped: boolean, output?: string}>}
+ * @param {{exec?: (command: string) => string, overallMode?: "fail"|"warn", newCodeMode?: "fail"|"warn"}} [options]
+ *        exec override (tests) and, per check, whether a miss fails the job ("fail", default) or only warns
+ * @returns {Array<{type: string, coverage: number|null, minRequired: number, passed: boolean, skipped: boolean, mode: string, output?: string}>}
  */
 export function runCoverageChecks(
   coverageFile,
@@ -264,11 +265,13 @@ export function runCoverageChecks(
   const results = [];
 
   if (minCoverageNewCode !== null) {
-    results.push(checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options));
+    const result = checkDiffCoverage(coverageFile, baseBranch, minCoverageNewCode, options);
+    results.push({ ...result, mode: options.newCodeMode ?? "fail" });
   }
 
   if (minCoverage !== null) {
-    results.push(checkOverallCoverage(coverageFile, minCoverage));
+    const result = checkOverallCoverage(coverageFile, minCoverage);
+    results.push({ ...result, mode: options.overallMode ?? "fail" });
   }
 
   return results;

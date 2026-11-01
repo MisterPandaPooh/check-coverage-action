@@ -217,6 +217,33 @@ Total: 42 lines added, 39 covered`;
     assert.ok(body.includes("-5.00"));
   });
 
+  it("shows a warning badge, not a failure, for a warn-mode check below its threshold", () => {
+    const results = [
+      { type: "overall", coverage: 60, minRequired: 80, passed: false, mode: "warn" },
+      { type: "new-code", coverage: 95, minRequired: 90, passed: true, mode: "fail" },
+    ];
+
+    const body = buildCommentBody(results);
+
+    assert.ok(body.includes("status-warning-yellow"));
+    assert.ok(!body.includes("status-failing"));
+    assert.ok(body.includes("Overall-Passing%20with%20warnings-yellow"));
+    assert.ok(!body.includes("Overall-Failing"));
+  });
+
+  it("still reports Failing when a fail-mode check is below its threshold", () => {
+    const results = [
+      { type: "overall", coverage: 60, minRequired: 80, passed: false, mode: "warn" },
+      { type: "new-code", coverage: 50, minRequired: 90, passed: false, mode: "fail" },
+    ];
+
+    const body = buildCommentBody(results);
+
+    assert.ok(body.includes("status-warning-yellow"));
+    assert.ok(body.includes("status-failing-red"));
+    assert.ok(body.includes("Overall-Failing-red"));
+  });
+
   it("reports n/a instead of a fake 100% when the diff has no coverable lines", () => {
     const results = [
       {
